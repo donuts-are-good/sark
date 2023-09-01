@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -21,25 +20,6 @@ type Configuration struct {
 var config Configuration
 var client = &http.Client{}
 
-func loadConfigurations() {
-	file, err := os.Open("config.json")
-	if err != nil {
-		log.Println("Error opening config:", err)
-		return
-	}
-	defer file.Close()
-
-	decoder := json.NewDecoder(file)
-	err = decoder.Decode(&config)
-	if err != nil {
-		log.Println("Error decoding config:", err)
-		return
-	}
-
-	// Set client timeout
-	client.Timeout = time.Duration(config.HTTPClientTimeout) * time.Second
-}
-
 type App struct {
 	Domain         string `json:"domain"`
 	HealthEndpoint string `json:"healthEndpoint"`
@@ -51,22 +31,37 @@ type Metrics struct {
 	LastFail    time.Time
 }
 
-var domainMetrics sync.Map
-var wg sync.WaitGroup
+var domainMetrics = make(map[string]Metrics)
 
 func main() {
-	loadConfigurations()
+	if err := loadConfigurations(); err != nil {
+		log.Fatal(err)
+	}
 
 	ticker := time.NewTicker(time.Duration(config.HealthCheckInterval) * time.Second)
 	defer ticker.Stop()
 
 	for {
-		select {
-		case <-ticker.C:
-			loadConfigurations()
-			checkHealthAndReport()
-		}
+		<-ticker.C
+		checkHealthAndReport()
 	}
+}
+
+func loadConfigurations() error {
+	file, err := os.Open("config.json")
+	if err != nil {
+		return fmt.Errorf("Error opening config: %v", err)
+	}
+	defer file.Close()
+
+	decoder := json.NewDecoder(file)
+	err = decoder.Decode(&config)
+	if err != nil {
+		return fmt.Errorf("Error decoding config: %v", err)
+	}
+
+	client.Timeout = time.Duration(config.HTTPClientTimeout) * time.Second
+	return nil
 }
 
 func checkHealthAndReport() {
@@ -75,18 +70,12 @@ func checkHealthAndReport() {
 	var builder strings.Builder
 
 	for host, domains := range apps {
-		wg.Add(1)
-		go func(h string, doms []App) {
-			defer wg.Done()
-			for _, domainConfig := range doms {
-				status, currentTime := checkDomain(h, domainConfig)
-				// Writing the output to the file
-				builder.WriteString(fmt.Sprintf("%s: %s | Last 200: %s | Last Request: %s | Last Fail: %s\n",
-					domainConfig.Domain, status, currentTime.Last200, currentTime.LastRequest, currentTime.LastFail))
-			}
-		}(host, domains)
+		for _, domainConfig := range domains {
+			status, currentTime := checkDomain(host, domainConfig)
+			builder.WriteString(fmt.Sprintf("%s: %s | Last 200: %s | Last Request: %s | Last Fail: %s\n",
+				domainConfig.Domain, status, currentTime.Last200, currentTime.LastRequest, currentTime.LastFail))
+		}
 	}
-	wg.Wait()
 
 	writeToFile(config.OutputFilePath, builder.String())
 }
@@ -95,14 +84,14 @@ func checkDomain(host string, domainConfig App) (status string, currentTime Metr
 	url := fmt.Sprintf("http://%s/%s", host, strings.TrimPrefix(domainConfig.HealthEndpoint, "/"))
 	resp, err := client.Get(url)
 
-	metrics, _ := domainMetrics.LoadOrStore(domainConfig.Domain, &Metrics{})
-	currentTime = *metrics.(*Metrics)
+	if resp != nil && resp.Body != nil {
+		defer resp.Body.Close()
+	}
+
+	currentTime = domainMetrics[domainConfig.Domain]
 	currentTime.LastRequest = time.Now()
 
-	if err == nil {
-		if resp.Body != nil {
-			resp.Body.Close()
-		}
+	if err == nil && resp != nil {
 		if resp.StatusCode == 200 {
 			status = "UP"
 			currentTime.Last200 = time.Now()
@@ -116,7 +105,7 @@ func checkDomain(host string, domainConfig App) (status string, currentTime Metr
 		currentTime.LastFail = time.Now()
 	}
 
-	domainMetrics.Store(domainConfig.Domain, &currentTime)
+	domainMetrics[domainConfig.Domain] = currentTime
 	return
 }
 
