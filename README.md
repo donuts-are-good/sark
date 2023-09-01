@@ -58,6 +58,11 @@ define your preferences for the variables defined in `config.json`. these are th
 
 sark determines if a host is 'up' by if the health endpoint returns an http 200 response. if an app has crashed, usually it does not serve a 200, so we can assume the request failed and we note the time of the last successful request in our output. 
 
+
+## did you know
+
+sark is named after the character by the same name from the movie tron. sark was the character employed by the master control program to oversee the games and players on the grid. in this sense sark is the service in charge of monitoring the hosts and apps on our grid, so the name is fitting. 
+
 ## license
 
 MIT License 2023 donuts-are-good, for more info see license.md
