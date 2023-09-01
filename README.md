@@ -1,4 +1,4 @@
-![ghbanner](https://github.com/donuts-are-good/sark/assets/96031819/6b45895a-f0ec-47a2-bc6c-b88a4169c2eb)
+![ghbanner](https://github.com/donuts-are-good/sark/assets/96031819/cefa6b36-c21b-45ec-b0d8-ae545cee3d7b)
 ![donuts-are-good's followers](https://img.shields.io/github/followers/donuts-are-good?&color=555&style=for-the-badge&label=followers) ![donuts-are-good's stars](https://img.shields.io/github/stars/donuts-are-good?affiliations=OWNER%2CCOLLABORATOR&color=555&style=for-the-badge) ![donuts-are-good's visitors](https://komarev.com/ghpvc/?username=donuts-are-good&color=555555&style=for-the-badge&label=visitors)
 
 # sark
@@ -59,9 +59,9 @@ define your preferences for the variables defined in `config.json`. these are th
 sark determines if a host is 'up' by if the health endpoint returns an http 200 response. if an app has crashed, usually it does not serve a 200, so we can assume the request failed and we note the time of the last successful request in our output. 
 
 
-## did you know
+## trivia
 
-sark is named after the character by the same name from the movie tron. sark was the character employed by the master control program to oversee the games and players on the grid. in this sense sark is the service in charge of monitoring the hosts and apps on our grid, so the name is fitting. 
+sark got its name after a character in the movie 'tron'. sark was the character employed by the master control program to oversee the games and players on the grid. in this sense sark is the service in charge of monitoring the hosts and apps on our grid, so the name was fitting. 
 
 ## license
 
