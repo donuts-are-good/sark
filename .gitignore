@@ -2,3 +2,6 @@
 .Trash-1000
 sark
 BUILDS
+*.psd
+*.exe
+*.png
