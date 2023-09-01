@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -23,27 +24,27 @@ var client = &http.Client{}
 func loadConfigurations() {
 	file, err := os.Open("config.json")
 	if err != nil {
-		panic(err)
+		log.Println("Error opening config:", err)
+		return
 	}
 	defer file.Close()
 
 	decoder := json.NewDecoder(file)
 	err = decoder.Decode(&config)
 	if err != nil {
-		panic(err)
+		log.Println("Error decoding config:", err)
+		return
 	}
 
 	// Set client timeout
 	client.Timeout = time.Duration(config.HTTPClientTimeout) * time.Second
 }
 
-// App represents an application hosted on a node
 type App struct {
 	Domain         string `json:"domain"`
 	HealthEndpoint string `json:"healthEndpoint"`
 }
 
-// Metrics tracks the different timestamps for an application domain
 type Metrics struct {
 	Last200     time.Time
 	LastRequest time.Time
@@ -51,6 +52,7 @@ type Metrics struct {
 }
 
 var domainMetrics sync.Map
+var wg sync.WaitGroup
 
 func main() {
 	loadConfigurations()
@@ -61,54 +63,68 @@ func main() {
 	for {
 		select {
 		case <-ticker.C:
-			// Reload configurations
 			loadConfigurations()
 			checkHealthAndReport()
 		}
 	}
 }
+
 func checkHealthAndReport() {
 	apps := loadAppsConfiguration()
 
-	// Using strings.Builder for efficient string concatenation
 	var builder strings.Builder
 
 	for host, domains := range apps {
-		for _, domainConfig := range domains {
-			status := "DOWN"
-			currentTime := time.Now()
-			resp, err := client.Get("http://" + host + domainConfig.HealthEndpoint)
-
-			// Initialize metrics if not existent and also load them in one step
-			metrics, _ := domainMetrics.LoadOrStore(domainConfig.Domain, &Metrics{})
-			metricsPtr := metrics.(*Metrics)
-			metricsPtr.LastRequest = currentTime
-
-			if err == nil {
-				defer resp.Body.Close()
-				if resp.StatusCode == 200 {
-					status = "UP"
-					metricsPtr.Last200 = currentTime
-				} else {
-					metricsPtr.LastFail = currentTime
-				}
-			} else {
-				metricsPtr.LastFail = currentTime
+		wg.Add(1)
+		go func(h string, doms []App) {
+			defer wg.Done()
+			for _, domainConfig := range doms {
+				status, currentTime := checkDomain(h, domainConfig)
+				// Writing the output to the file
+				builder.WriteString(fmt.Sprintf("%s: %s | Last 200: %s | Last Request: %s | Last Fail: %s\n",
+					domainConfig.Domain, status, currentTime.Last200, currentTime.LastRequest, currentTime.LastFail))
 			}
-
-			// Writing the output to the file
-			builder.WriteString(fmt.Sprintf("%s: %s | Last 200: %s | Last Request: %s | Last Fail: %s\n",
-				domainConfig.Domain, status, metricsPtr.Last200, metricsPtr.LastRequest, metricsPtr.LastFail))
-		}
+		}(host, domains)
 	}
+	wg.Wait()
 
 	writeToFile(config.OutputFilePath, builder.String())
+}
+
+func checkDomain(host string, domainConfig App) (status string, currentTime Metrics) {
+	url := fmt.Sprintf("http://%s/%s", host, strings.TrimPrefix(domainConfig.HealthEndpoint, "/"))
+	resp, err := client.Get(url)
+
+	metrics, _ := domainMetrics.LoadOrStore(domainConfig.Domain, &Metrics{})
+	currentTime = *metrics.(*Metrics)
+	currentTime.LastRequest = time.Now()
+
+	if err == nil {
+		if resp.Body != nil {
+			resp.Body.Close()
+		}
+		if resp.StatusCode == 200 {
+			status = "UP"
+			currentTime.Last200 = time.Now()
+		} else {
+			status = "DOWN"
+			currentTime.LastFail = time.Now()
+		}
+	} else {
+		log.Println("Error checking domain:", domainConfig.Domain, err)
+		status = "DOWN"
+		currentTime.LastFail = time.Now()
+	}
+
+	domainMetrics.Store(domainConfig.Domain, &currentTime)
+	return
 }
 
 func loadAppsConfiguration() map[string][]App {
 	file, err := os.Open(config.AppsConfigPath)
 	if err != nil {
-		panic(err)
+		log.Println("Error opening apps config:", err)
+		return nil
 	}
 	defer file.Close()
 
@@ -116,7 +132,8 @@ func loadAppsConfiguration() map[string][]App {
 	decoder := json.NewDecoder(file)
 	err = decoder.Decode(&apps)
 	if err != nil {
-		panic(err)
+		log.Println("Error decoding apps config:", err)
+		return nil
 	}
 	return apps
 }
@@ -124,12 +141,13 @@ func loadAppsConfiguration() map[string][]App {
 func writeToFile(filePath, data string) {
 	file, err := os.Create(filePath)
 	if err != nil {
-		panic(err)
+		log.Println("Error creating file:", err)
+		return
 	}
 	defer file.Close()
 
 	_, err = file.WriteString(data)
 	if err != nil {
-		panic(err)
+		log.Println("Error writing to file:", err)
 	}
 }
