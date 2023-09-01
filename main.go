@@ -10,13 +10,31 @@ import (
 	"time"
 )
 
-// Configuration
-const healthCheckInterval = 1 * time.Minute
-const appsConfigPath = "apps.json"
-const outputFilePath = "output.txt"
+type Configuration struct {
+	HealthCheckInterval int    `json:"healthCheckInterval"`
+	AppsConfigPath      string `json:"appsConfigPath"`
+	OutputFilePath      string `json:"outputFilePath"`
+	HTTPClientTimeout   int    `json:"httpClientTimeout"`
+}
 
-var client = &http.Client{
-	Timeout: time.Second * 5,
+var config Configuration
+var client = &http.Client{}
+
+func loadConfigurations() {
+	file, err := os.Open("config.json")
+	if err != nil {
+		panic(err)
+	}
+	defer file.Close()
+
+	decoder := json.NewDecoder(file)
+	err = decoder.Decode(&config)
+	if err != nil {
+		panic(err)
+	}
+
+	// Set client timeout
+	client.Timeout = time.Duration(config.HTTPClientTimeout) * time.Second
 }
 
 // App represents an application hosted on a node
@@ -35,17 +53,20 @@ type Metrics struct {
 var domainMetrics sync.Map
 
 func main() {
-	ticker := time.NewTicker(healthCheckInterval)
+	loadConfigurations()
+
+	ticker := time.NewTicker(time.Duration(config.HealthCheckInterval) * time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ticker.C:
+			// Reload configurations
+			loadConfigurations()
 			checkHealthAndReport()
 		}
 	}
 }
-
 func checkHealthAndReport() {
 	apps := loadAppsConfiguration()
 
@@ -81,11 +102,11 @@ func checkHealthAndReport() {
 		}
 	}
 
-	writeToFile(outputFilePath, builder.String())
+	writeToFile(config.OutputFilePath, builder.String())
 }
 
 func loadAppsConfiguration() map[string][]App {
-	file, err := os.Open(appsConfigPath)
+	file, err := os.Open(config.AppsConfigPath)
 	if err != nil {
 		panic(err)
 	}

@@ -1,0 +1,6 @@
+{
+  "healthCheckInterval": 60,
+  "appsConfigPath": "apps.json",
+  "outputFilePath": "output.txt",
+  "httpClientTimeout": 10
+}
